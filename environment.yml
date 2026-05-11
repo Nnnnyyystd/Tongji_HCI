@@ -1,0 +1,16 @@
+name: foodmate
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - fastapi
+      - uvicorn[standard]
+      - pydantic
+      - sqlalchemy
+      - python-multipart
+      - python-dotenv
+      - pytest
+      - httpx
+      - ruff
