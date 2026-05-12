@@ -43,6 +43,45 @@ const routes = {
   },
 }
 
+const MEAL_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '零食' }
+
+function mealTypeLabel(type) {
+  return MEAL_LABELS[type] || type
+}
+
+function renderMealItem(m) {
+  const hasDetail = m.score !== null && (m.score_comment || m.score_variety !== null)
+
+  const scoreRow =
+    m.score !== null
+      ? `<div class="meal-score-row">
+           <span class="meal-score-badge">${m.score}分</span>
+           ${hasDetail ? `<button class="meal-detail-toggle" data-meal-id="${m.id}" type="button">详情</button>` : ''}
+         </div>`
+      : ''
+
+  const detailPanel = hasDetail
+    ? `<div class="meal-detail-expand hidden" id="meal-detail-${m.id}">
+         ${m.score_comment ? `<p class="detail-comment">"${m.score_comment}"</p>` : ''}
+         <div class="detail-scores">
+           ${m.score_variety != null ? `<span>食材多样 <strong>${m.score_variety}</strong>/35</span>` : ''}
+           ${m.score_balance != null ? `<span>营养均衡 <strong>${m.score_balance}</strong>/35</span>` : ''}
+           ${m.score_cooking != null ? `<span>烹饪健康 <strong>${m.score_cooking}</strong>/30</span>` : ''}
+         </div>
+       </div>`
+    : ''
+
+  return `<article class="meal-item">
+    <span>${mealTypeLabel(m.meal_type)}</span>
+    <div><strong>${m.content}</strong>${scoreRow}</div>
+  </article>${detailPanel}`
+}
+
+function todayDateStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 let activeChart = null
 
 document.querySelector('#app').innerHTML = `
@@ -74,9 +113,44 @@ document.querySelector('#app').innerHTML = `
 document.addEventListener('click', (event) => {
   const routeButton = event.target.closest('[data-route]')
   const logoutButton = event.target.closest('[data-action="logout"]')
+  const calDay = event.target.closest('.calendar-day[data-day]')
 
   if (logoutButton) {
     handleLogout()
+    return
+  }
+
+  if (calDay) {
+    const day = parseInt(calDay.dataset.day)
+    const now = new Date()
+    document.querySelectorAll('.calendar-day').forEach((b) => b.classList.remove('selected-day'))
+    calDay.classList.add('selected-day')
+    loadDayDetail(now.getFullYear(), now.getMonth() + 1, day)
+    return
+  }
+
+  const detailToggle = event.target.closest('.meal-detail-toggle')
+  if (detailToggle) {
+    const panel = document.querySelector(`#meal-detail-${detailToggle.dataset.mealId}`)
+    if (panel) {
+      panel.classList.toggle('hidden')
+      detailToggle.textContent = panel.classList.contains('hidden') ? '详情' : '收起'
+    }
+    return
+  }
+
+  if (event.target.closest('#photo-upload')) {
+    document.querySelector('#photo-input')?.click()
+    return
+  }
+
+  if (event.target.closest('#analyze-btn')) {
+    handleAnalyze()
+    return
+  }
+
+  if (event.target.closest('#ai-analyze-btn')) {
+    handleAiSummary()
     return
   }
 
@@ -102,9 +176,20 @@ document.addEventListener('submit', (event) => {
     event.preventDefault()
     handlePreferencesSave(event.target)
   }
+
+  if (event.target.matches('#meal-form')) {
+    event.preventDefault()
+    handleMealSave(event.target)
+  }
 })
 
 window.addEventListener('hashchange', renderCurrentRoute)
+
+document.addEventListener('change', (event) => {
+  if (event.target.matches('#photo-input')) {
+    handlePhotoSelect(event.target)
+  }
+})
 
 if (!window.location.hash) {
   navigateTo(authState.token ? 'home' : 'login', { replace: true })
@@ -194,12 +279,18 @@ function renderCurrentRoute() {
   updateNavigation(routeName)
 
   if (routeName === 'home') {
-    checkBackend()
-    renderWeekChart('home-week-chart')
+    loadWeekChart('home-week-chart')
+    loadTodayMeals()
+  }
+
+  if (routeName === 'calendar') {
+    const now = new Date()
+    loadCalendarData(now.getFullYear(), now.getMonth() + 1, now.getDate())
   }
 
   if (routeName === 'trend') {
-    renderWeekChart('trend-week-chart')
+    loadWeekChart('trend-week-chart')
+    loadSavedAiSummary()
   }
 
   if (routeName === 'settings') {
@@ -460,14 +551,6 @@ function renderHome() {
       <span class="status-dot ok"></span>
     </section>
 
-    <section class="status-card">
-      <div>
-        <p class="label">后端连接</p>
-        <strong id="api-status">检测中</strong>
-      </div>
-      <span id="status-dot" class="status-dot pending"></span>
-    </section>
-
     <section class="quick-actions" aria-label="快捷操作">
       <button class="primary-action" type="button" data-route="record">记录一餐</button>
       <button class="secondary-action" type="button" data-route="calendar">查看日历</button>
@@ -476,20 +559,12 @@ function renderHome() {
     <section class="card">
       <div class="section-heading">
         <h2>今日记录</h2>
-        <span>3 餐</span>
+        <span id="today-count">加载中</span>
       </div>
-      <div class="meal-list">
-        <article class="meal-item">
-          <span>早餐</span>
-          <strong>包子、豆浆</strong>
-        </article>
-        <article class="meal-item">
-          <span>午餐</span>
-          <strong>米饭、番茄炒蛋、青菜</strong>
-        </article>
+      <div class="meal-list" id="today-meals">
         <article class="meal-item muted">
-          <span>晚餐</span>
-          <strong>等待记录</strong>
+          <span>—</span>
+          <strong>正在加载</strong>
         </article>
       </div>
     </section>
@@ -510,68 +585,91 @@ function renderRecord() {
   return `
     <section class="card">
       <div class="section-heading">
-        <h2>输入饮食内容</h2>
-        <span>AI 识别模拟</span>
+        <h2>记录一餐</h2>
       </div>
-      <textarea class="meal-input" rows="5" placeholder="例如：午餐吃了米饭、番茄炒蛋和青菜"></textarea>
-      <button class="primary-action full-width" type="button">开始识别</button>
-    </section>
+      <form id="meal-form">
+        <label class="form-row">
+          <span>日期</span>
+          <input name="date" type="date" value="${todayDateStr()}" required />
+        </label>
+        <label class="form-row">
+          <span>餐次</span>
+          <select name="meal_type">
+            <option value="breakfast">早餐</option>
+            <option value="lunch" selected>午餐</option>
+            <option value="dinner">晚餐</option>
+            <option value="snack">零食</option>
+          </select>
+        </label>
 
-    <section class="card">
-      <div class="section-heading">
-        <h2>识别结果</h2>
-        <span>待确认</span>
-      </div>
-      <div class="parse-list">
-        <div class="parse-item">
-          <span>主食</span>
-          <strong>米饭</strong>
+        <div class="photo-upload" id="photo-upload" role="button" tabindex="0" aria-label="上传照片">
+          <span class="photo-upload-icon">📷</span>
+          <span id="photo-placeholder">点击上传照片（可选）</span>
+          <img id="photo-preview" class="hidden" alt="食物照片" />
+          <input type="file" id="photo-input" accept="image/*" class="hidden" />
         </div>
-        <div class="parse-item">
-          <span>蛋白质</span>
-          <strong>番茄炒蛋</strong>
+
+        <textarea class="meal-input" id="meal-content" name="content"
+          rows="3" placeholder="补充描述（可选，有图片时可不填）"></textarea>
+
+        <button type="button" id="analyze-btn" class="secondary-action full-width">
+          AI 识别 &amp; 评分
+        </button>
+
+        <div class="score-card hidden" id="score-card">
+          <span class="score-number" id="score-number">—</span>
+          <div class="score-detail">
+            <span>食材多样 <strong id="score-variety">—</strong>/35</span>
+            <span>营养均衡 <strong id="score-balance">—</strong>/35</span>
+            <span>烹饪健康 <strong id="score-cooking">—</strong>/30</span>
+          </div>
+          <p class="score-comment" id="score-comment"></p>
         </div>
-        <div class="parse-item">
-          <span>蔬菜</span>
-          <strong>青菜</strong>
-        </div>
-      </div>
-      <button class="secondary-action full-width" type="button" data-route="home">保存并返回首页</button>
+        <input type="hidden" name="score" id="score-value" />
+        <input type="hidden" name="score_variety" id="score-variety-value" />
+        <input type="hidden" name="score_balance" id="score-balance-value" />
+        <input type="hidden" name="score_cooking" id="score-cooking-value" />
+        <input type="hidden" name="score_comment" id="score-comment-value" />
+
+        <p class="form-message" aria-live="polite"></p>
+        <button class="primary-action full-width" type="submit">保存记录</button>
+      </form>
     </section>
   `
 }
 
 function renderCalendar() {
-  const days = Array.from({ length: 30 }, (_, index) => index + 1)
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  const today = now.getDate()
+  const daysInMonth = new Date(year, month, 0).getDate()
+
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
     .map((day) => {
-      const active = [3, 8, 12, 18, 24, 29].includes(day) ? 'has-record' : ''
-      const today = day === 11 ? 'today' : ''
-      return `<button class="calendar-day ${active} ${today}" type="button">${day}</button>`
+      const isToday = day === today ? 'today' : ''
+      return `<button class="calendar-day ${isToday}" type="button" data-day="${day}">${day}</button>`
     })
     .join('')
 
   return `
     <section class="card">
       <div class="section-heading">
-        <h2>2026 年 5 月</h2>
+        <h2>${year} 年 ${month} 月</h2>
         <span>历史记录</span>
       </div>
-      <div class="calendar-grid">${days}</div>
+      <div class="calendar-grid" id="calendar-grid">${days}</div>
     </section>
 
     <section class="card">
       <div class="section-heading">
-        <h2>5 月 11 日</h2>
-        <span>3 餐</span>
+        <h2 id="detail-date">${month} 月 ${today} 日</h2>
+        <span id="detail-count">加载中</span>
       </div>
-      <div class="meal-list">
-        <article class="meal-item">
-          <span>早餐</span>
-          <strong>包子、豆浆</strong>
-        </article>
-        <article class="meal-item">
-          <span>午餐</span>
-          <strong>米饭、番茄炒蛋、青菜</strong>
+      <div class="meal-list" id="detail-meals">
+        <article class="meal-item muted">
+          <span>—</span>
+          <strong>正在加载</strong>
         </article>
       </div>
     </section>
@@ -582,20 +680,21 @@ function renderTrend() {
   return `
     <section class="card">
       <div class="section-heading">
-        <h2>本周记录趋势</h2>
+        <h2>本周日均评分</h2>
         <span>7 天</span>
       </div>
       <div class="chart-wrap large">
-        <canvas id="trend-week-chart" aria-label="本周记录趋势"></canvas>
+        <canvas id="trend-week-chart" aria-label="本周日均评分趋势"></canvas>
       </div>
     </section>
 
     <section class="card">
       <div class="section-heading">
-        <h2>温和建议</h2>
-        <span>AI 模拟</span>
+        <h2>AI 饮食分析</h2>
+        <span id="ai-summary-meta" class="score-comment"></span>
       </div>
-      <p class="summary-text">本周记录比较稳定，午餐蔬菜出现频率较高。可以继续保持规律记录，晚餐如果经常遗漏，可以先用一句话快速补记。</p>
+      <p id="ai-summary" class="summary-text">点击下方按钮，AI 将根据本周记录生成饮食总结。</p>
+      <button class="secondary-action full-width" id="ai-analyze-btn" type="button">生成本周分析</button>
     </section>
   `
 }
@@ -669,45 +768,274 @@ async function checkBackend() {
   }
 }
 
-function renderWeekChart(canvasId) {
-  const ctx = document.querySelector(`#${canvasId}`)
+async function loadTodayMeals() {
+  const date = todayDateStr()
+  const countEl = document.querySelector('#today-count')
+  const mealsEl = document.querySelector('#today-meals')
 
-  if (!ctx) {
+  if (!countEl) return
+
+  try {
+    const result = await apiRequest(`/api/meals?date=${date}`, { auth: true })
+    const meals = result.data
+
+    countEl.textContent = `${meals.length} 餐`
+
+    if (meals.length === 0) {
+      mealsEl.innerHTML = `<article class="meal-item muted"><span>—</span><strong>今日暂无记录</strong></article>`
+    } else {
+      mealsEl.innerHTML = meals.map(renderMealItem).join('')
+    }
+  } catch {
+    if (countEl) countEl.textContent = '—'
+    if (mealsEl) mealsEl.innerHTML = `<article class="meal-item muted"><span>—</span><strong>加载失败</strong></article>`
+  }
+}
+
+async function loadCalendarData(year, month, selectedDay) {
+  try {
+    const result = await apiRequest(`/api/meals/month?year=${year}&month=${month}`, { auth: true })
+    const recorded = new Set(result.data.days)
+
+    document.querySelectorAll('.calendar-day[data-day]').forEach((btn) => {
+      const day = parseInt(btn.dataset.day)
+      if (recorded.has(day)) btn.classList.add('has-record')
+    })
+  } catch {
+    // calendar still works without record markers
+  }
+
+  await loadDayDetail(year, month, selectedDay)
+}
+
+async function loadDayDetail(year, month, day) {
+  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const dateEl = document.querySelector('#detail-date')
+  const countEl = document.querySelector('#detail-count')
+  const mealsEl = document.querySelector('#detail-meals')
+
+  if (!dateEl) return
+
+  dateEl.textContent = `${month} 月 ${day} 日`
+
+  try {
+    const result = await apiRequest(`/api/meals?date=${date}`, { auth: true })
+    const meals = result.data
+
+    countEl.textContent = `${meals.length} 条记录`
+
+    if (meals.length === 0) {
+      mealsEl.innerHTML = `<article class="meal-item muted"><span>—</span><strong>当日无记录</strong></article>`
+    } else {
+      mealsEl.innerHTML = meals.map(renderMealItem).join('')
+    }
+  } catch {
+    if (countEl) countEl.textContent = '—'
+    if (mealsEl) mealsEl.innerHTML = `<article class="meal-item muted"><span>—</span><strong>加载失败</strong></article>`
+  }
+}
+
+async function handleMealSave(form) {
+  const message = form.querySelector('.form-message')
+  const content = form.content.value.trim()
+
+  if (!content) {
+    setMessage(message, '请填写食物描述或先进行 AI 识别', 'error')
     return
+  }
+
+  setMessage(message, '正在保存...', 'info')
+
+  const scoreRaw = form.score?.value
+  const body = {
+    date: form.date.value,
+    meal_type: form.meal_type.value,
+    content,
+    ...(scoreRaw
+      ? {
+          score: parseInt(scoreRaw),
+          score_variety: form.score_variety?.value ? parseInt(form.score_variety.value) : undefined,
+          score_balance: form.score_balance?.value ? parseInt(form.score_balance.value) : undefined,
+          score_cooking: form.score_cooking?.value ? parseInt(form.score_cooking.value) : undefined,
+          score_comment: form.score_comment?.value || undefined,
+        }
+      : {}),
+  }
+
+  try {
+    await apiRequest('/api/meals', { method: 'POST', auth: true, body })
+    setMessage(message, '保存成功', 'success')
+    setTimeout(() => navigateTo('home', { replace: true }), 800)
+  } catch (error) {
+    setMessage(message, error.message || '保存失败', 'error')
+  }
+}
+
+async function loadWeekChart(canvasId) {
+  if (activeChart) {
+    activeChart.destroy()
+    activeChart = null
+  }
+
+  const ctx = document.querySelector(`#${canvasId}`)
+  if (!ctx) return
+
+  const emptyData = Array(7).fill(null)
+  const emptyLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+  let labels = emptyLabels
+  let data = emptyData
+
+  try {
+    const result = await apiRequest('/api/meals/week-stats', { auth: true })
+    labels = result.data.map((s) => s.day_label)
+    data = result.data.map((s) => s.avg_score)
+  } catch {
+    // fall through with empty data
   }
 
   activeChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+      labels,
       datasets: [
         {
-          label: '记录餐数',
-          data: [2, 3, 2, 4, 3, 2, 3],
+          label: '日均评分',
+          data,
           borderColor: '#5BAA75',
           backgroundColor: 'rgba(91, 170, 117, 0.14)',
           fill: true,
           tension: 0.35,
-          pointRadius: 3,
+          pointRadius: 4,
+          spanGaps: false,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: false,
-        },
-      },
+      plugins: { legend: { display: false } },
       scales: {
         y: {
-          beginAtZero: true,
-          ticks: {
-            stepSize: 1,
-          },
+          min: 0,
+          max: 100,
+          ticks: { stepSize: 20 },
         },
       },
     },
   })
+}
+
+function handlePhotoSelect(input) {
+  const file = input.files?.[0]
+  if (!file) return
+
+  const preview = document.querySelector('#photo-preview')
+  const placeholder = document.querySelector('#photo-placeholder')
+  const uploadIcon = document.querySelector('.photo-upload-icon')
+
+  const url = URL.createObjectURL(file)
+  preview.src = url
+  preview.classList.remove('hidden')
+  if (placeholder) placeholder.classList.add('hidden')
+  if (uploadIcon) uploadIcon.classList.add('hidden')
+}
+
+async function handleAnalyze() {
+  const btn = document.querySelector('#analyze-btn')
+  const message = document.querySelector('.form-message')
+  const photoInput = document.querySelector('#photo-input')
+  const contentInput = document.querySelector('#meal-content')
+  const text = contentInput?.value.trim()
+  const file = photoInput?.files?.[0]
+
+  if (!file && !text) {
+    setMessage(message, '请上传照片或填写食物描述', 'error')
+    return
+  }
+
+  btn.disabled = true
+  btn.textContent = '识别中...'
+  setMessage(message, '', 'info')
+
+  try {
+    const fd = new FormData()
+    if (file) fd.append('image', file)
+    if (text) fd.append('text', text)
+
+    const response = await fetch(`${API_BASE}/api/meals/analyze`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authState.token}` },
+      body: fd,
+    })
+    const result = await response.json()
+
+    if (!response.ok || result.success === false) {
+      throw new Error(result.detail || result.message || '识别失败')
+    }
+
+    const r = result.data
+    document.querySelector('#score-number').textContent = r.score
+    document.querySelector('#score-variety').textContent = r.variety
+    document.querySelector('#score-balance').textContent = r.balance
+    document.querySelector('#score-cooking').textContent = r.cooking
+    document.querySelector('#score-comment').textContent = r.comment
+    document.querySelector('#score-value').value = r.score
+    document.querySelector('#score-variety-value').value = r.variety
+    document.querySelector('#score-balance-value').value = r.balance
+    document.querySelector('#score-cooking-value').value = r.cooking
+    document.querySelector('#score-comment-value').value = r.comment
+    document.querySelector('#score-card').classList.remove('hidden')
+
+    if (contentInput && !contentInput.value.trim()) {
+      contentInput.value = r.identified
+    }
+  } catch (error) {
+    setMessage(message, error.message || '识别失败', 'error')
+  } finally {
+    btn.disabled = false
+    btn.textContent = 'AI 识别 & 评分'
+  }
+}
+
+function updateSummaryMeta(isoDate) {
+  const metaEl = document.querySelector('#ai-summary-meta')
+  if (!metaEl) return
+  const d = new Date(isoDate)
+  metaEl.textContent = `${d.getMonth() + 1}月${d.getDate()}日生成`
+}
+
+async function loadSavedAiSummary() {
+  try {
+    const result = await apiRequest('/api/meals/ai-summary', { auth: true })
+    if (result.data?.summary) {
+      const el = document.querySelector('#ai-summary')
+      const btn = document.querySelector('#ai-analyze-btn')
+      if (el) el.textContent = result.data.summary
+      if (btn) btn.textContent = '重新生成分析'
+      updateSummaryMeta(result.data.created_at)
+    }
+  } catch {
+    // no saved summary yet, keep default text
+  }
+}
+
+async function handleAiSummary() {
+  const btn = document.querySelector('#ai-analyze-btn')
+  const summaryEl = document.querySelector('#ai-summary')
+
+  btn.disabled = true
+  btn.textContent = '分析中...'
+  summaryEl.textContent = '正在调用 AI 分析本周饮食，请稍候...'
+
+  try {
+    const result = await apiRequest('/api/meals/ai-summary', { method: 'POST', auth: true })
+    summaryEl.textContent = result.data.summary
+    updateSummaryMeta(result.data.created_at)
+  } catch (error) {
+    summaryEl.textContent = '分析失败：' + (error.message || '请稍后再试')
+  } finally {
+    btn.disabled = false
+    btn.textContent = '重新生成分析'
+  }
 }
