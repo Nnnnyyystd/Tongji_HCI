@@ -33,6 +33,10 @@ const routes = {
     title: '饮食日历',
     render: renderCalendar,
   },
+  mealDetail: {
+    title: '历史详情',
+    render: renderMealDetail,
+  },
   trend: {
     title: '趋势分析',
     render: renderTrend,
@@ -49,32 +53,39 @@ function mealTypeLabel(type) {
   return MEAL_LABELS[type] || type
 }
 
-function renderMealItem(m) {
-  const hasDetail = m.score !== null && (m.score_comment || m.score_variety !== null)
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
 
+function resolveImageUrl(url) {
+  if (!url) return ''
+  return url.startsWith('http') ? url : `${API_BASE}${url}`
+}
+
+function renderMealItem(m, options = {}) {
   const scoreRow =
     m.score !== null
       ? `<div class="meal-score-row">
            <span class="meal-score-badge">${m.score}分</span>
-           ${hasDetail ? `<button class="meal-detail-toggle" data-meal-id="${m.id}" type="button">详情</button>` : ''}
          </div>`
       : ''
 
-  const detailPanel = hasDetail
-    ? `<div class="meal-detail-expand hidden" id="meal-detail-${m.id}">
-         ${m.score_comment ? `<p class="detail-comment">"${m.score_comment}"</p>` : ''}
-         <div class="detail-scores">
-           ${m.score_variety != null ? `<span>食材多样 <strong>${m.score_variety}</strong>/35</span>` : ''}
-           ${m.score_balance != null ? `<span>营养均衡 <strong>${m.score_balance}</strong>/35</span>` : ''}
-           ${m.score_cooking != null ? `<span>烹饪健康 <strong>${m.score_cooking}</strong>/30</span>` : ''}
-         </div>
-       </div>`
+  const actionRow = options.actions
+    ? `<div class="meal-actions">
+        <button class="meal-action-link" type="button" data-route="mealDetail" data-route-id="${m.id}">详情</button>
+        <button class="meal-action-link danger" type="button" data-action="delete-meal" data-meal-id="${m.id}">删除</button>
+      </div>`
     : ''
 
   return `<article class="meal-item">
     <span>${mealTypeLabel(m.meal_type)}</span>
-    <div><strong>${m.content}</strong>${scoreRow}</div>
-  </article>${detailPanel}`
+    <div><strong>${escapeHtml(m.content)}</strong>${scoreRow}${actionRow}</div>
+  </article>`
 }
 
 function todayDateStr() {
@@ -83,6 +94,10 @@ function todayDateStr() {
 }
 
 let activeChart = null
+let calendarState = (() => {
+  const d = new Date()
+  return { year: d.getFullYear(), month: d.getMonth() + 1, selectedDay: d.getDate() }
+})()
 
 document.querySelector('#app').innerHTML = `
   <main class="phone-shell" aria-label="FoodMate demo">
@@ -113,6 +128,8 @@ document.querySelector('#app').innerHTML = `
 document.addEventListener('click', (event) => {
   const routeButton = event.target.closest('[data-route]')
   const logoutButton = event.target.closest('[data-action="logout"]')
+  const deleteMealButton = event.target.closest('[data-action="delete-meal"]')
+  const calendarMonthButton = event.target.closest('[data-calendar-month]')
   const calDay = event.target.closest('.calendar-day[data-day]')
 
   if (logoutButton) {
@@ -120,25 +137,25 @@ document.addEventListener('click', (event) => {
     return
   }
 
+  if (deleteMealButton) {
+    handleMealDelete(parseInt(deleteMealButton.dataset.mealId))
+    return
+  }
+
+  if (calendarMonthButton) {
+    shiftCalendarMonth(parseInt(calendarMonthButton.dataset.calendarMonth))
+    return
+  }
+
   if (calDay) {
+    if (calDay.disabled) return
     const day = parseInt(calDay.dataset.day)
-    const now = new Date()
+    calendarState.selectedDay = day
     document.querySelectorAll('.calendar-day').forEach((b) => b.classList.remove('selected-day'))
     calDay.classList.add('selected-day')
-    loadDayDetail(now.getFullYear(), now.getMonth() + 1, day)
+    loadDayDetail(calendarState.year, calendarState.month, day)
     return
   }
-
-  const detailToggle = event.target.closest('.meal-detail-toggle')
-  if (detailToggle) {
-    const panel = document.querySelector(`#meal-detail-${detailToggle.dataset.mealId}`)
-    if (panel) {
-      panel.classList.toggle('hidden')
-      detailToggle.textContent = panel.classList.contains('hidden') ? '详情' : '收起'
-    }
-    return
-  }
-
   if (event.target.closest('#photo-upload')) {
     document.querySelector('#photo-input')?.click()
     return
@@ -158,7 +175,9 @@ document.addEventListener('click', (event) => {
     return
   }
 
-  navigateTo(routeButton.dataset.route)
+  navigateTo(routeButton.dataset.route, {
+    params: routeButton.dataset.routeId ? { id: routeButton.dataset.routeId } : undefined,
+  })
 })
 
 document.addEventListener('submit', (event) => {
@@ -188,6 +207,13 @@ window.addEventListener('hashchange', renderCurrentRoute)
 document.addEventListener('change', (event) => {
   if (event.target.matches('#photo-input')) {
     handlePhotoSelect(event.target)
+    resetScoreResult()
+  }
+})
+
+document.addEventListener('input', (event) => {
+  if (event.target.matches('#meal-content')) {
+    resetScoreResult()
   }
 })
 
@@ -225,7 +251,8 @@ function clearAuth() {
 
 function navigateTo(routeName, options = {}) {
   const nextRoute = routes[routeName] ? routeName : 'home'
-  const nextHash = `#/${nextRoute}`
+  const params = options.params ? new URLSearchParams(options.params).toString() : ''
+  const nextHash = `#/${nextRoute}${params ? `?${params}` : ''}`
 
   if (options.replace) {
     window.history.replaceState(null, '', nextHash)
@@ -241,9 +268,21 @@ function navigateTo(routeName, options = {}) {
   window.location.hash = nextHash
 }
 
+function parseRouteHash() {
+  const raw = window.location.hash.replace('#/', '')
+  const [routeName, query = ''] = raw.split('?')
+  return {
+    routeName: routes[routeName] ? routeName : 'home',
+    params: new URLSearchParams(query),
+  }
+}
+
 function getCurrentRoute() {
-  const routeName = window.location.hash.replace('#/', '')
-  return routes[routeName] ? routeName : 'home'
+  return parseRouteHash().routeName
+}
+
+function getRouteParams() {
+  return parseRouteHash().params
 }
 
 function renderCurrentRoute() {
@@ -284,8 +323,11 @@ function renderCurrentRoute() {
   }
 
   if (routeName === 'calendar') {
-    const now = new Date()
-    loadCalendarData(now.getFullYear(), now.getMonth() + 1, now.getDate())
+    loadCalendarData(calendarState.year, calendarState.month, calendarState.selectedDay)
+  }
+
+  if (routeName === 'mealDetail') {
+    loadMealDetail()
   }
 
   if (routeName === 'trend') {
@@ -479,6 +521,32 @@ function setMessage(element, text, type) {
   element.className = `form-message ${type}`
 }
 
+function resetScoreResult() {
+  const scoreCard = document.querySelector('#score-card')
+  if (!scoreCard) return
+
+  scoreCard.classList.add('hidden')
+
+  const textDefaults = [
+    ['#score-number', '—'],
+    ['#score-variety', '—'],
+    ['#score-balance', '—'],
+    ['#score-cooking', '—'],
+    ['#score-comment', ''],
+  ]
+  textDefaults.forEach(([selector, value]) => {
+    const element = document.querySelector(selector)
+    if (element) element.textContent = value
+  })
+
+  ;['#score-value', '#score-variety-value', '#score-balance-value', '#score-cooking-value', '#score-comment-value'].forEach(
+    (selector) => {
+      const input = document.querySelector(selector)
+      if (input) input.value = ''
+    },
+  )
+}
+
 function renderLogin() {
   return `
     <section class="auth-card">
@@ -639,16 +707,23 @@ function renderRecord() {
 }
 
 function renderCalendar() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth() + 1
-  const today = now.getDate()
+  const { year, month, selectedDay } = calendarState
+  const todayDate = new Date()
+  const todayYear = todayDate.getFullYear()
+  const todayMonth = todayDate.getMonth() + 1
+  const todayDay = todayDate.getDate()
+  const isCurrentMonth = year === todayYear && month === todayMonth
   const daysInMonth = new Date(year, month, 0).getDate()
+  if (selectedDay > daysInMonth) calendarState.selectedDay = daysInMonth
+  if (isCurrentMonth && calendarState.selectedDay > todayDay) calendarState.selectedDay = todayDay
 
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
     .map((day) => {
-      const isToday = day === today ? 'today' : ''
-      return `<button class="calendar-day ${isToday}" type="button" data-day="${day}">${day}</button>`
+      const isFuture =
+        year > todayYear || (year === todayYear && month > todayMonth) || (year === todayYear && month === todayMonth && day > todayDay)
+      const isToday = day === todayDay && month === todayMonth && year === todayYear ? 'today' : ''
+      const selected = day === calendarState.selectedDay ? 'selected-day' : ''
+      return `<button class="calendar-day ${isToday} ${selected} ${isFuture ? 'future-day' : ''}" type="button" data-day="${day}" ${isFuture ? 'disabled' : ''}>${day}</button>`
     })
     .join('')
 
@@ -656,14 +731,17 @@ function renderCalendar() {
     <section class="card">
       <div class="section-heading">
         <h2>${year} 年 ${month} 月</h2>
-        <span>历史记录</span>
+        <div class="calendar-controls">
+          <button class="text-action" type="button" data-calendar-month="-1">上月</button>
+          <button class="text-action" type="button" data-calendar-month="1" ${isCurrentMonth ? 'disabled' : ''}>下月</button>
+        </div>
       </div>
       <div class="calendar-grid" id="calendar-grid">${days}</div>
     </section>
 
     <section class="card">
       <div class="section-heading">
-        <h2 id="detail-date">${month} 月 ${today} 日</h2>
+        <h2 id="detail-date">${month} 月 ${calendarState.selectedDay} 日</h2>
         <span id="detail-count">加载中</span>
       </div>
       <div class="meal-list" id="detail-meals">
@@ -672,6 +750,21 @@ function renderCalendar() {
           <strong>正在加载</strong>
         </article>
       </div>
+    </section>
+  `
+}
+
+function renderMealDetail() {
+  return `
+    <section class="card" id="meal-detail-page">
+      <div class="section-heading">
+        <h2>记录详情</h2>
+        <button class="text-action" type="button" data-route="calendar">返回日历</button>
+      </div>
+      <article class="meal-item muted">
+        <span>—</span>
+        <strong>正在加载</strong>
+      </article>
     </section>
   `
 }
@@ -793,19 +886,43 @@ async function loadTodayMeals() {
 }
 
 async function loadCalendarData(year, month, selectedDay) {
+  const daysInMonth = new Date(year, month, 0).getDate()
+  calendarState.selectedDay = Math.min(selectedDay, daysInMonth)
+
   try {
     const result = await apiRequest(`/api/meals/month?year=${year}&month=${month}`, { auth: true })
     const recorded = new Set(result.data.days)
 
     document.querySelectorAll('.calendar-day[data-day]').forEach((btn) => {
       const day = parseInt(btn.dataset.day)
-      if (recorded.has(day)) btn.classList.add('has-record')
+      btn.classList.toggle('has-record', recorded.has(day))
     })
   } catch {
     // calendar still works without record markers
   }
 
-  await loadDayDetail(year, month, selectedDay)
+  await loadDayDetail(year, month, calendarState.selectedDay)
+}
+
+function shiftCalendarMonth(delta) {
+  const next = new Date(calendarState.year, calendarState.month - 1 + delta, 1)
+  const today = new Date()
+  if (next.getFullYear() > today.getFullYear() || (next.getFullYear() === today.getFullYear() && next.getMonth() > today.getMonth())) {
+    return
+  }
+  calendarState = {
+    year: next.getFullYear(),
+    month: next.getMonth() + 1,
+    selectedDay: 1,
+  }
+  renderCurrentRoute()
+}
+
+function syncCalendarToDate(dateStr) {
+  const [year, month, day] = dateStr.split('-').map((n) => parseInt(n))
+  if (!year || !month || !day) return
+
+  calendarState = { year, month, selectedDay: day }
 }
 
 async function loadDayDetail(year, month, day) {
@@ -827,7 +944,7 @@ async function loadDayDetail(year, month, day) {
     if (meals.length === 0) {
       mealsEl.innerHTML = `<article class="meal-item muted"><span>—</span><strong>当日无记录</strong></article>`
     } else {
-      mealsEl.innerHTML = meals.map(renderMealItem).join('')
+      mealsEl.innerHTML = meals.map((meal) => renderMealItem(meal, { actions: true })).join('')
     }
   } catch {
     if (countEl) countEl.textContent = '—'
@@ -835,16 +952,112 @@ async function loadDayDetail(year, month, day) {
   }
 }
 
+function renderMealDetailContent(meal) {
+  const imageBlock = meal.image_url
+    ? `<img class="meal-detail-photo" src="${resolveImageUrl(meal.image_url)}" alt="餐食照片" />`
+    : `<article class="meal-item muted"><span>照片</span><strong>没有保存照片</strong></article>`
+
+  const scoreBlock =
+    meal.score != null
+      ? `<div class="score-card compact">
+          <span class="score-number">${meal.score}</span>
+          <div class="score-detail">
+            ${meal.score_variety != null ? `<span>食材多样 <strong>${meal.score_variety}</strong>/35</span>` : ''}
+            ${meal.score_balance != null ? `<span>营养均衡 <strong>${meal.score_balance}</strong>/35</span>` : ''}
+            ${meal.score_cooking != null ? `<span>烹饪健康 <strong>${meal.score_cooking}</strong>/30</span>` : ''}
+          </div>
+          ${meal.score_comment ? `<p class="score-comment">${escapeHtml(meal.score_comment)}</p>` : ''}
+        </div>`
+      : `<article class="meal-item muted"><span>评分</span><strong>未进行 AI 评分</strong></article>`
+
+  return `
+    <div class="history-detail">
+      ${imageBlock}
+      <div class="detail-grid">
+        <span>日期</span><strong>${meal.date}</strong>
+        <span>餐次</span><strong>${mealTypeLabel(meal.meal_type)}</strong>
+        <span>记录时间</span><strong>${new Date(meal.created_at).toLocaleString('zh-CN')}</strong>
+      </div>
+      <div class="history-content">
+        <span>食物描述</span>
+        <p>${escapeHtml(meal.content)}</p>
+      </div>
+      ${scoreBlock}
+      <div class="detail-actions">
+        <button class="danger-action" type="button" data-action="delete-meal" data-meal-id="${meal.id}">删除记录</button>
+      </div>
+    </div>
+  `
+}
+
+async function loadMealDetail() {
+  const page = document.querySelector('#meal-detail-page')
+  const mealId = getRouteParams().get('id')
+  if (!page) return
+
+  if (!mealId) {
+    page.innerHTML = `<article class="meal-item muted"><span>—</span><strong>缺少记录编号</strong></article>`
+    return
+  }
+
+  try {
+    const result = await apiRequest(`/api/meals/${mealId}`, { auth: true })
+    const meal = result.data
+    syncCalendarToDate(meal.date)
+    page.innerHTML = `
+      <div class="section-heading">
+        <h2>记录详情</h2>
+        <button class="text-action" type="button" data-route="calendar">返回日历</button>
+      </div>
+      ${renderMealDetailContent(meal)}
+    `
+  } catch (error) {
+    page.innerHTML = `
+      <div class="section-heading">
+        <h2>记录详情</h2>
+        <button class="text-action" type="button" data-route="calendar">返回日历</button>
+      </div>
+      <article class="meal-item muted"><span>—</span><strong>${escapeHtml(error.message || '加载失败')}</strong></article>
+    `
+  }
+}
+
+async function uploadMealPhoto(file) {
+  const fd = new FormData()
+  fd.append('image', file)
+
+  const response = await fetch(`${API_BASE}/api/meals/photo`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${authState.token}` },
+    body: fd,
+  })
+  const result = await response.json().catch(() => null)
+
+  if (response.status === 401) {
+    clearAuth()
+    navigateTo('login', { replace: true })
+    throw new Error('登录已过期，请重新登录')
+  }
+
+  if (!response.ok || result?.success === false) {
+    throw new Error(formatApiError(result) || '图片上传失败')
+  }
+
+  return result.data?.image_url || ''
+}
+
 async function handleMealSave(form) {
   const message = form.querySelector('.form-message')
   const content = form.content.value.trim()
+  const photoInput = document.querySelector('#photo-input')
+  const photoFile = photoInput?.files?.[0]
 
   if (!content) {
     setMessage(message, '请填写食物描述或先进行 AI 识别', 'error')
     return
   }
 
-  setMessage(message, '正在保存...', 'info')
+  setMessage(message, photoFile ? '正在上传照片并保存...' : '正在保存...', 'info')
 
   const scoreRaw = form.score?.value
   const body = {
@@ -863,11 +1076,38 @@ async function handleMealSave(form) {
   }
 
   try {
+    if (photoFile) {
+      body.image_url = await uploadMealPhoto(photoFile)
+    }
     await apiRequest('/api/meals', { method: 'POST', auth: true, body })
     setMessage(message, '保存成功', 'success')
     setTimeout(() => navigateTo('home', { replace: true }), 800)
   } catch (error) {
     setMessage(message, error.message || '保存失败', 'error')
+  }
+}
+
+async function handleMealDelete(mealId) {
+  if (!mealId || !window.confirm('确定删除这条饮食记录吗？')) {
+    return
+  }
+
+  try {
+    await apiRequest(`/api/meals/${mealId}`, { method: 'DELETE', auth: true })
+    const route = getCurrentRoute()
+    if (route === 'mealDetail') {
+      navigateTo('calendar', { replace: true })
+      return
+    }
+
+    if (route === 'calendar') {
+      await loadCalendarData(calendarState.year, calendarState.month, calendarState.selectedDay)
+      return
+    }
+
+    renderCurrentRoute()
+  } catch (error) {
+    window.alert(error.message || '删除失败')
   }
 }
 
@@ -957,6 +1197,7 @@ async function handleAnalyze() {
   btn.disabled = true
   btn.textContent = '识别中...'
   setMessage(message, '', 'info')
+  resetScoreResult()
 
   try {
     const fd = new FormData()
@@ -968,13 +1209,23 @@ async function handleAnalyze() {
       headers: { Authorization: `Bearer ${authState.token}` },
       body: fd,
     })
-    const result = await response.json()
+    const result = await response.json().catch(() => null)
 
-    if (!response.ok || result.success === false) {
-      throw new Error(result.detail || result.message || '识别失败')
+    if (response.status === 401) {
+      clearAuth()
+      navigateTo('login', { replace: true })
+      throw new Error('登录已过期，请重新登录')
     }
 
-    const r = result.data
+    if (!response.ok || result?.success === false) {
+      throw new Error(formatApiError(result) || '识别失败')
+    }
+
+    const r = result?.data
+    if (!r || r.score == null || r.variety == null || r.balance == null || r.cooking == null) {
+      throw new Error('AI 返回数据不完整，请重试')
+    }
+
     document.querySelector('#score-number').textContent = r.score
     document.querySelector('#score-variety').textContent = r.variety
     document.querySelector('#score-balance').textContent = r.balance
@@ -987,9 +1238,10 @@ async function handleAnalyze() {
     document.querySelector('#score-comment-value').value = r.comment
     document.querySelector('#score-card').classList.remove('hidden')
 
-    if (contentInput && !contentInput.value.trim()) {
+    if (contentInput && r.identified) {
       contentInput.value = r.identified
     }
+    setMessage(message, '识别完成，可确认或修改后保存', 'success')
   } catch (error) {
     setMessage(message, error.message || '识别失败', 'error')
   } finally {

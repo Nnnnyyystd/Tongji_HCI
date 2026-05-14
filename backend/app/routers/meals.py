@@ -1,18 +1,28 @@
 from datetime import date as date_type
 from datetime import timedelta
+from uuid import uuid4
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi import Form as FormField
 
+from backend.app.core.config import UPLOAD_DIR
 from backend.app.deps import CurrentUser, DbSession
-from backend.app.schemas.meal import AiSummaryOut, AnalyzeResult, MealCreate, MealOut, WeekDayStat
+from backend.app.schemas.meal import AiSummaryOut, AnalyzeResult, MealCreate, MealOut, MealUpdate, WeekDayStat
 from backend.app.schemas.response import ApiResponse, ok
 from backend.app.services import deepseek as deepseek_service
 from backend.app.services import meal as meal_service
 
 
 router = APIRouter(prefix="/meals", tags=["meals"])
+
+_IMAGE_SUFFIXES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 @router.get("", response_model=ApiResponse[list[MealOut]])
@@ -43,10 +53,35 @@ async def analyze_meal_image(
         raise HTTPException(status_code=400, detail="请提供照片或文字描述")
     try:
         image_bytes = await image.read() if image else None
-        result = await deepseek_service.analyze_meal(image_bytes, text)
+        image_mime = image.content_type if image else None
+        result = await deepseek_service.analyze_meal(image_bytes, text, image_mime)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except deepseek_service.AiServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return ok(data=result)
+
+
+@router.post("/photo", response_model=ApiResponse[dict[str, str]])
+async def upload_meal_photo(
+    current_user: CurrentUser,
+    image: Annotated[UploadFile, File()],
+):
+    content_type = image.content_type or ""
+    if content_type not in _IMAGE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="请上传 JPG、PNG、WEBP 或 GIF 图片")
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="图片不能为空")
+    if len(image_bytes) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="图片不能超过 5MB")
+
+    meal_upload_dir = UPLOAD_DIR / "meals"
+    meal_upload_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"user-{current_user.id}-{uuid4().hex}{_IMAGE_SUFFIXES[content_type]}"
+    (meal_upload_dir / filename).write_bytes(image_bytes)
+    return ok(data={"image_url": f"/uploads/meals/{filename}"})
 
 
 @router.get("/ai-summary", response_model=ApiResponse[AiSummaryOut | None])
@@ -65,7 +100,10 @@ async def generate_ai_summary(db: DbSession, current_user: CurrentUser):
         d = (today - timedelta(days=i)).strftime("%Y-%m-%d")
         meals = meal_service.get_meals_by_date(db, current_user.id, d)
         all_meals.extend(MealOut.model_validate(m).model_dump() for m in meals)
-    summary_text = await deepseek_service.summarize_week(all_meals)
+    try:
+        summary_text = await deepseek_service.summarize_week(all_meals)
+    except deepseek_service.AiServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     record = meal_service.save_summary(db, current_user.id, summary_text)
     return ok(data=AiSummaryOut(summary=record.content, created_at=record.created_at))
 
@@ -73,6 +111,22 @@ async def generate_ai_summary(db: DbSession, current_user: CurrentUser):
 @router.post("", response_model=ApiResponse[MealOut])
 def add_meal(body: MealCreate, db: DbSession, current_user: CurrentUser):
     meal = meal_service.create_meal(db, current_user.id, body)
+    return ok(data=MealOut.model_validate(meal))
+
+
+@router.get("/{meal_id}", response_model=ApiResponse[MealOut])
+def get_meal(meal_id: int, db: DbSession, current_user: CurrentUser):
+    meal = meal_service.get_meal_by_id(db, current_user.id, meal_id)
+    if not meal:
+        raise HTTPException(status_code=404, detail="Not found")
+    return ok(data=MealOut.model_validate(meal))
+
+
+@router.put("/{meal_id}", response_model=ApiResponse[MealOut])
+def edit_meal(meal_id: int, body: MealUpdate, db: DbSession, current_user: CurrentUser):
+    meal = meal_service.update_meal(db, current_user.id, meal_id, body)
+    if not meal:
+        raise HTTPException(status_code=404, detail="Not found")
     return ok(data=MealOut.model_validate(meal))
 
 

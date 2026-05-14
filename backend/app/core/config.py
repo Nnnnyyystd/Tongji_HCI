@@ -8,6 +8,7 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_DIR = PROJECT_ROOT / "backend"
 DATA_DIR = BACKEND_DIR / "data"
+UPLOAD_DIR = BACKEND_DIR / "uploads"
 DATABASE_URL = f"sqlite:///{DATA_DIR / 'foodmate.db'}"
 
 APP_NAME = "FoodMate API"

@@ -35,6 +35,11 @@ button {
   font: inherit;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 #app {
   min-height: 100vh;
   display: grid;
@@ -298,15 +303,24 @@ h2 {
   border-radius: 4px;
 }
 
-.meal-detail-toggle {
-  font-size: 12px;
-  color: var(--muted);
-  background: none;
-  border: none;
-  cursor: pointer;
+.meal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.meal-action-link {
   padding: 0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  border: 0;
+  color: var(--primary-dark);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.meal-action-link.danger {
+  color: var(--danger);
 }
 
 .meal-detail-expand {
@@ -466,6 +480,11 @@ h2 {
   gap: 8px;
 }
 
+.calendar-controls {
+  display: flex;
+  gap: 8px;
+}
+
 .calendar-day {
   aspect-ratio: 1;
   border: 1px solid var(--border);
@@ -494,11 +513,84 @@ h2 {
   outline-offset: -2px;
 }
 
+.calendar-day.future-day {
+  color: #a9b3ad;
+  background: #f0f3f1;
+  border-color: #e3e9e5;
+}
+
 .summary-text {
   margin: 0;
   color: var(--text);
   font-size: 14px;
   line-height: 1.7;
+}
+
+.history-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.meal-detail-photo {
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  font-size: 13px;
+}
+
+.detail-grid span,
+.history-content span {
+  color: var(--muted);
+}
+
+.detail-grid strong {
+  min-width: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.history-content {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  font-size: 13px;
+}
+
+.history-content p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.danger-action {
+  min-height: 46px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--danger);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .photo-upload {
@@ -538,6 +630,14 @@ h2 {
   border-radius: 8px;
   background: var(--surface);
   text-align: center;
+}
+
+.score-card.compact {
+  margin-bottom: 0;
+}
+
+.score-card.compact .score-number {
+  font-size: 40px;
 }
 
 .score-number {
