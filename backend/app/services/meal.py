@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.models.ai_summary import AiSummary
 from backend.app.models.meal import Meal
-from backend.app.schemas.meal import MealCreate
+from backend.app.schemas.meal import MealCreate, MealUpdate
 
 
 def get_meals_by_date(db: Session, user_id: int, date: str) -> list[Meal]:
@@ -30,6 +30,28 @@ def get_recorded_days(db: Session, user_id: int, year: int, month: int) -> list[
 def create_meal(db: Session, user_id: int, data: MealCreate) -> Meal:
     meal = Meal(user_id=user_id, **data.model_dump())
     db.add(meal)
+    db.commit()
+    db.refresh(meal)
+    return meal
+
+
+def get_meal_by_id(db: Session, user_id: int, meal_id: int) -> Meal | None:
+    return (
+        db.query(Meal)
+        .filter(Meal.id == meal_id, Meal.user_id == user_id)
+        .first()
+    )
+
+
+def update_meal(db: Session, user_id: int, meal_id: int, data: MealUpdate) -> Meal | None:
+    meal = get_meal_by_id(db, user_id, meal_id)
+    if not meal:
+        return None
+
+    updates = data.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(meal, field, value)
+
     db.commit()
     db.refresh(meal)
     return meal
@@ -74,11 +96,7 @@ def save_summary(db: Session, user_id: int, content: str) -> AiSummary:
 
 
 def delete_meal(db: Session, user_id: int, meal_id: int) -> bool:
-    meal = (
-        db.query(Meal)
-        .filter(Meal.id == meal_id, Meal.user_id == user_id)
-        .first()
-    )
+    meal = get_meal_by_id(db, user_id, meal_id)
     if not meal:
         return False
     db.delete(meal)

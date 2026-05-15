@@ -12,6 +12,19 @@ class MealCreate(BaseModel):
     score_balance: int | None = Field(default=None, ge=0, le=35)
     score_cooking: int | None = Field(default=None, ge=0, le=30)
     score_comment: str | None = Field(default=None, max_length=100)
+    image_url: str | None = Field(default=None, max_length=500)
+
+
+class MealUpdate(BaseModel):
+    date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    meal_type: str | None = Field(default=None, pattern=r"^(breakfast|lunch|dinner|snack)$")
+    content: str | None = Field(default=None, min_length=1, max_length=500)
+    score: int | None = Field(default=None, ge=0, le=100)
+    score_variety: int | None = Field(default=None, ge=0, le=35)
+    score_balance: int | None = Field(default=None, ge=0, le=35)
+    score_cooking: int | None = Field(default=None, ge=0, le=30)
+    score_comment: str | None = Field(default=None, max_length=100)
+    image_url: str | None = Field(default=None, max_length=500)
 
 
 class MealOut(BaseModel):
@@ -24,6 +37,7 @@ class MealOut(BaseModel):
     score_balance: int | None
     score_cooking: int | None
     score_comment: str | None
+    image_url: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

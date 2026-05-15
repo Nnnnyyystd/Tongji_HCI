@@ -19,4 +19,5 @@ class Meal(Base):
     score_balance: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     score_cooking: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     score_comment: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
