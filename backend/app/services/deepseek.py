@@ -18,6 +18,9 @@ _SCORE_SYSTEM = (
     "总分必须等于三个维度分数相加。"
     "评分要使用具体整数，不要总是使用5的倍数或整十档。"
     "请根据食物种类、搭配完整度、烹饪方式做1到4分的细微区分。"
+    "如果用户提供了餐次（早餐/午餐/晚餐/零食），请按对应餐次的合理标准来评价，"
+    "comment 中也要使用用户提供的餐次（不要凭图片自行判断餐次），"
+    "且评分要考虑该餐次的常见预期（例如早餐分量较少属于正常）。"
     "仅返回JSON，格式："
     '{"identified":"识别到的食物（顿号分隔）",'
     '"score":总分整数,"variety":食材多样分,"balance":营养均衡分,"cooking":烹饪健康分,'
@@ -26,8 +29,12 @@ _SCORE_SYSTEM = (
 
 _SUMMARY_SYSTEM = (
     "你是营养师，请根据用户一周饮食记录给出温和友好的总结。"
-    "包含：本周亮点、需改进之处、2条具体建议。"
-    "面向大学生，语气轻松，控制在120字以内。"
+    "面向大学生，语气轻松。"
+    "仅返回JSON，不要任何解释文字、不要使用markdown代码块，格式如下："
+    '{"highlights":"本周亮点，30-45字，可用1个emoji",'
+    '"improvements":"需改进之处，30-45字，可用1个emoji",'
+    '"suggestions":["具体建议1，20-30字","具体建议2，20-30字"]}'
+    "suggestions数组固定2条。"
 )
 
 _STAPLE_KEYWORDS = ("米饭", "饭", "面", "粉", "粥", "馒头", "包子", "饼", "土豆", "红薯", "玉米", "燕麦", "面包", "意面")
@@ -236,7 +243,12 @@ def _normalize_analysis(data: dict) -> dict:
     }
 
 
-async def analyze_meal(image_bytes: bytes | None, text: str | None, image_mime: str | None = None) -> dict:
+async def analyze_meal(
+    image_bytes: bytes | None,
+    text: str | None,
+    image_mime: str | None = None,
+    meal_type: str | None = None,
+) -> dict:
     if not image_bytes and not text:
         raise ValueError("请提供照片或文字描述")
     _require_api_key(QWEN_API_KEY, "QWEN_API_KEY")
@@ -251,9 +263,15 @@ async def analyze_meal(image_bytes: bytes | None, text: str | None, image_mime: 
             "image_url": {"url": f"data:{mime};base64,{b64}"},
         })
 
+    meal_label = _MEAL_LABELS.get(meal_type or "", "")
+    prompt_parts = []
+    if meal_label:
+        prompt_parts.append(f"这是用户的【{meal_label}】，请按{meal_label}的合理标准评分与评价")
+    prompt_parts.append(f"用户补充描述：{text}" if text else "请分析图片中的食物")
+
     user_content.append({
         "type": "text",
-        "text": f"用户补充描述：{text}" if text else "请分析图片中的食物",
+        "text": "。".join(prompt_parts),
     })
 
     payload = {
@@ -332,4 +350,38 @@ async def summarize_week(meals: list[dict]) -> str:
     except json.JSONDecodeError as exc:
         raise AiServiceError("DeepSeek 返回的响应不是 JSON") from exc
 
-    return _read_message_content(response_data).strip()
+    raw_text = _read_message_content(response_data).strip()
+    return _normalize_summary(raw_text)
+
+
+def _normalize_summary(raw_text: str) -> str:
+    """Parse the structured weekly summary and return canonical JSON string.
+
+    Falls back to a generic structure when the model violates the JSON contract,
+    so the frontend can always render in the same shape.
+    """
+    try:
+        data = _parse_json(raw_text)
+    except AiServiceError:
+        return json.dumps(
+            {"highlights": raw_text, "improvements": "", "suggestions": []},
+            ensure_ascii=False,
+        )
+
+    highlights = _clean_text(data.get("highlights"), "", 200)
+    improvements = _clean_text(data.get("improvements"), "", 200)
+    raw_suggestions = data.get("suggestions") or []
+    suggestions: list[str] = []
+    if isinstance(raw_suggestions, list):
+        for item in raw_suggestions:
+            text = _clean_text(item, "", 200)
+            if text:
+                suggestions.append(text)
+    return json.dumps(
+        {
+            "highlights": highlights,
+            "improvements": improvements,
+            "suggestions": suggestions[:3],
+        },
+        ensure_ascii=False,
+    )

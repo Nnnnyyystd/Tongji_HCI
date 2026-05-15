@@ -48,13 +48,14 @@ async def analyze_meal_image(
     current_user: CurrentUser,
     image: Annotated[UploadFile | None, File()] = None,
     text: Annotated[str | None, FormField()] = None,
+    meal_type: Annotated[str | None, FormField()] = None,
 ):
     if not image and not text:
         raise HTTPException(status_code=400, detail="请提供照片或文字描述")
     try:
         image_bytes = await image.read() if image else None
         image_mime = image.content_type if image else None
-        result = await deepseek_service.analyze_meal(image_bytes, text, image_mime)
+        result = await deepseek_service.analyze_meal(image_bytes, text, image_mime, meal_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except deepseek_service.AiServiceError as e:

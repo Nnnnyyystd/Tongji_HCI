@@ -77,8 +77,14 @@ function renderMealItem(m, options = {}) {
 
   const actionRow = options.actions
     ? `<div class="meal-actions">
-        <button class="meal-action-link" type="button" data-route="mealDetail" data-route-id="${m.id}">详情</button>
-        <button class="meal-action-link danger" type="button" data-action="delete-meal" data-meal-id="${m.id}">删除</button>
+        <button class="meal-action-link" type="button" data-route="mealDetail" data-route-id="${m.id}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h14M11 6l6 6-6 6"/></svg>
+          <span>详情</span>
+        </button>
+        <button class="meal-action-link danger" type="button" data-action="delete-meal" data-meal-id="${m.id}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/></svg>
+          <span>删除</span>
+        </button>
       </div>`
     : ''
 
@@ -786,7 +792,7 @@ function renderTrend() {
         <h2>AI 饮食分析</h2>
         <span id="ai-summary-meta" class="score-comment"></span>
       </div>
-      <p id="ai-summary" class="summary-text">点击下方按钮，AI 将根据本周记录生成饮食总结。</p>
+      <div id="ai-summary" class="summary-text">点击下方按钮，AI 将根据本周记录生成饮食总结。</div>
       <button class="secondary-action full-width" id="ai-analyze-btn" type="button">生成本周分析</button>
     </section>
   `
@@ -1134,6 +1140,16 @@ async function loadWeekChart(canvasId) {
     // fall through with empty data
   }
 
+  const canvasCtx = ctx.getContext('2d')
+  const gradientFill = canvasCtx.createLinearGradient(0, 0, 0, ctx.height || 220)
+  gradientFill.addColorStop(0, 'rgba(56, 189, 248, 0.42)')
+  gradientFill.addColorStop(0.6, 'rgba(125, 211, 252, 0.18)')
+  gradientFill.addColorStop(1, 'rgba(224, 242, 254, 0.02)')
+
+  const gradientStroke = canvasCtx.createLinearGradient(0, 0, ctx.width || 320, 0)
+  gradientStroke.addColorStop(0, '#38BDF8')
+  gradientStroke.addColorStop(1, '#0369A1')
+
   activeChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -1142,11 +1158,18 @@ async function loadWeekChart(canvasId) {
         {
           label: '日均评分',
           data,
-          borderColor: '#5BAA75',
-          backgroundColor: 'rgba(91, 170, 117, 0.14)',
+          borderColor: gradientStroke,
+          backgroundColor: gradientFill,
           fill: true,
-          tension: 0.35,
+          tension: 0.4,
+          borderWidth: 2.5,
           pointRadius: 4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#0EA5E9',
+          pointBorderWidth: 2,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: '#0EA5E9',
+          pointHoverBorderColor: '#fff',
           spanGaps: false,
         },
       ],
@@ -1154,12 +1177,31 @@ async function loadWeekChart(canvasId) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(12, 74, 110, 0.92)',
+          titleColor: '#E0F2FE',
+          bodyColor: '#fff',
+          borderColor: 'rgba(125, 211, 252, 0.4)',
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 10,
+          displayColors: false,
+        },
+      },
       scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: '#6B8AA8', font: { size: 11 } },
+          border: { display: false },
+        },
         y: {
           min: 0,
           max: 100,
-          ticks: { stepSize: 20 },
+          ticks: { stepSize: 20, color: '#6B8AA8', font: { size: 11 } },
+          grid: { color: 'rgba(125, 211, 252, 0.18)' },
+          border: { display: false },
         },
       },
     },
@@ -1186,8 +1228,10 @@ async function handleAnalyze() {
   const message = document.querySelector('.form-message')
   const photoInput = document.querySelector('#photo-input')
   const contentInput = document.querySelector('#meal-content')
+  const mealTypeInput = document.querySelector('#meal-form select[name="meal_type"]')
   const text = contentInput?.value.trim()
   const file = photoInput?.files?.[0]
+  const mealType = mealTypeInput?.value
 
   if (!file && !text) {
     setMessage(message, '请上传照片或填写食物描述', 'error')
@@ -1203,6 +1247,7 @@ async function handleAnalyze() {
     const fd = new FormData()
     if (file) fd.append('image', file)
     if (text) fd.append('text', text)
+    if (mealType) fd.append('meal_type', mealType)
 
     const response = await fetch(`${API_BASE}/api/meals/analyze`, {
       method: 'POST',
@@ -1257,13 +1302,61 @@ function updateSummaryMeta(isoDate) {
   metaEl.textContent = `${d.getMonth() + 1}月${d.getDate()}日生成`
 }
 
+function renderAiSummary(text) {
+  const el = document.querySelector('#ai-summary')
+  if (!el) return
+
+  let parsed = null
+  if (text && text.trim().startsWith('{')) {
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = null
+    }
+  }
+
+  if (!parsed || (!parsed.highlights && !parsed.improvements && !(parsed.suggestions?.length))) {
+    el.classList.remove('structured')
+    el.textContent = text || ''
+    return
+  }
+
+  const sections = []
+  if (parsed.highlights) {
+    sections.push(`
+      <div class="summary-section highlights">
+        <span class="summary-tag"><span class="summary-tag-icon">✦</span>本周亮点</span>
+        <p>${escapeHtml(parsed.highlights)}</p>
+      </div>`)
+  }
+  if (parsed.improvements) {
+    sections.push(`
+      <div class="summary-section improvements">
+        <span class="summary-tag"><span class="summary-tag-icon">◐</span>需改进</span>
+        <p>${escapeHtml(parsed.improvements)}</p>
+      </div>`)
+  }
+  if (Array.isArray(parsed.suggestions) && parsed.suggestions.length) {
+    const items = parsed.suggestions
+      .map((s, i) => `<li><span class="summary-step">${i + 1}</span><span>${escapeHtml(s)}</span></li>`)
+      .join('')
+    sections.push(`
+      <div class="summary-section suggestions">
+        <span class="summary-tag"><span class="summary-tag-icon">→</span>具体建议</span>
+        <ol class="summary-list">${items}</ol>
+      </div>`)
+  }
+
+  el.classList.add('structured')
+  el.innerHTML = sections.join('')
+}
+
 async function loadSavedAiSummary() {
   try {
     const result = await apiRequest('/api/meals/ai-summary', { auth: true })
     if (result.data?.summary) {
-      const el = document.querySelector('#ai-summary')
       const btn = document.querySelector('#ai-analyze-btn')
-      if (el) el.textContent = result.data.summary
+      renderAiSummary(result.data.summary)
       if (btn) btn.textContent = '重新生成分析'
       updateSummaryMeta(result.data.created_at)
     }
@@ -1278,13 +1371,15 @@ async function handleAiSummary() {
 
   btn.disabled = true
   btn.textContent = '分析中...'
+  summaryEl.classList.remove('structured')
   summaryEl.textContent = '正在调用 AI 分析本周饮食，请稍候...'
 
   try {
     const result = await apiRequest('/api/meals/ai-summary', { method: 'POST', auth: true })
-    summaryEl.textContent = result.data.summary
+    renderAiSummary(result.data.summary)
     updateSummaryMeta(result.data.created_at)
   } catch (error) {
+    summaryEl.classList.remove('structured')
     summaryEl.textContent = '分析失败：' + (error.message || '请稍后再试')
   } finally {
     btn.disabled = false

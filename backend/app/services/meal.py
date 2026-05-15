@@ -7,13 +7,17 @@ from backend.app.models.meal import Meal
 from backend.app.schemas.meal import MealCreate, MealUpdate
 
 
+_MEAL_TYPE_ORDER = {"breakfast": 0, "lunch": 1, "dinner": 2, "snack": 3}
+
+
 def get_meals_by_date(db: Session, user_id: int, date: str) -> list[Meal]:
-    return (
+    meals = (
         db.query(Meal)
         .filter(Meal.user_id == user_id, Meal.date == date)
         .order_by(Meal.created_at)
         .all()
     )
+    return sorted(meals, key=lambda m: (_MEAL_TYPE_ORDER.get(m.meal_type, 99), m.created_at))
 
 
 def get_recorded_days(db: Session, user_id: int, year: int, month: int) -> list[int]:
