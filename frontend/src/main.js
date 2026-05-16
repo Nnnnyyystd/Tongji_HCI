@@ -326,6 +326,7 @@ function renderCurrentRoute() {
   if (routeName === 'home') {
     loadWeekChart('home-week-chart')
     loadTodayMeals()
+    loadTodaySummary()
   }
 
   if (routeName === 'calendar') {
@@ -338,6 +339,8 @@ function renderCurrentRoute() {
 
   if (routeName === 'trend') {
     loadWeekChart('trend-week-chart')
+    loadWeekStatsPanel()
+    loadTodaySummary()
     loadSavedAiSummary()
   }
 
@@ -645,6 +648,14 @@ function renderHome() {
 
     <section class="card">
       <div class="section-heading">
+        <h2>今日总结</h2>
+        <span id="today-summary-count">加载中</span>
+      </div>
+      <div id="today-summary" class="summary-text">正在根据今日记录生成总结...</div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
         <h2>一周趋势</h2>
         <button class="text-action" type="button" data-route="trend">查看</button>
       </div>
@@ -789,7 +800,28 @@ function renderTrend() {
 
     <section class="card">
       <div class="section-heading">
-        <h2>AI 饮食分析</h2>
+        <h2>常见食物</h2>
+        <span id="week-stats-meta">加载中</span>
+      </div>
+      <div class="meal-list" id="top-foods-list">
+        <article class="meal-item muted">
+          <span>-</span>
+          <strong>正在加载</strong>
+        </article>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <h2>今日反馈</h2>
+        <span id="today-summary-count">加载中</span>
+      </div>
+      <div id="today-summary" class="summary-text">正在根据今日记录生成总结...</div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <h2>本周 AI 分析</h2>
         <span id="ai-summary-meta" class="score-comment"></span>
       </div>
       <div id="ai-summary" class="summary-text">点击下方按钮，AI 将根据本周记录生成饮食总结。</div>
@@ -888,6 +920,60 @@ async function loadTodayMeals() {
   } catch {
     if (countEl) countEl.textContent = '—'
     if (mealsEl) mealsEl.innerHTML = `<article class="meal-item muted"><span>—</span><strong>加载失败</strong></article>`
+  }
+}
+
+async function loadTodaySummary() {
+  const summaryEl = document.querySelector('#today-summary') || document.querySelector('#ai-summary')
+  const countEl = document.querySelector('#today-summary-count') || document.querySelector('#ai-summary-meta')
+  if (!summaryEl) return
+
+  try {
+    const result = await apiRequest('/api/agent/today-summary', { auth: true })
+    const data = result.data
+    const highlights = Array.isArray(data.highlights) && data.highlights.length
+      ? `<div class="summary-highlights">${data.highlights.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</div>`
+      : ''
+
+    summaryEl.classList.remove('structured')
+    summaryEl.innerHTML = `
+      <p>${escapeHtml(data.summary)}</p>
+      <p>${escapeHtml(data.suggestion)}</p>
+      ${highlights}
+    `
+    if (countEl) {
+      countEl.textContent = data.meal_count ? `${data.meal_count} 餐` : '暂无记录'
+    }
+  } catch (error) {
+    summaryEl.textContent = error.message || '今日总结加载失败'
+    if (countEl) countEl.textContent = '-'
+  }
+}
+
+async function loadWeekStatsPanel() {
+  const metaEl = document.querySelector('#week-stats-meta')
+  const listEl = document.querySelector('#top-foods-list')
+  if (!metaEl || !listEl) return
+
+  try {
+    const result = await apiRequest('/api/stats/week', { auth: true })
+    const data = result.data
+    metaEl.textContent = `${data.total_meals} 餐 / ${data.recorded_days} 天`
+    if (!data.top_foods.length) {
+      listEl.innerHTML = `<article class="meal-item muted"><span>-</span><strong>本周还没有可统计的食物</strong></article>`
+      return
+    }
+    listEl.innerHTML = data.top_foods
+      .map(
+        (item, index) => `<article class="meal-item">
+          <span>TOP ${index + 1}</span>
+          <div><strong>${escapeHtml(item.name)}</strong><div class="meal-score-row"><span class="meal-score-badge">${item.count} 次</span></div></div>
+        </article>`,
+      )
+      .join('')
+  } catch (error) {
+    metaEl.textContent = '-'
+    listEl.innerHTML = `<article class="meal-item muted"><span>-</span><strong>${escapeHtml(error.message || '统计加载失败')}</strong></article>`
   }
 }
 
@@ -1133,9 +1219,9 @@ async function loadWeekChart(canvasId) {
   let data = emptyData
 
   try {
-    const result = await apiRequest('/api/meals/week-stats', { auth: true })
-    labels = result.data.map((s) => s.day_label)
-    data = result.data.map((s) => s.avg_score)
+    const result = await apiRequest('/api/stats/week', { auth: true })
+    labels = result.data.days
+    data = result.data.average_scores
   } catch {
     // fall through with empty data
   }

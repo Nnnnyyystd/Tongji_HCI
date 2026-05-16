@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.core.config import API_PREFIX, APP_NAME, FRONTEND_ORIGINS, UPLOAD_DIR
 from backend.app.db.init_db import init_db
-from backend.app.routers import auth, health, meals, preferences
+from backend.app.routers import auth, health, meals, preferences, stats, summary
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,8 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(preferences.router, prefix=API_PREFIX)
     app.include_router(meals.router, prefix=API_PREFIX)
+    app.include_router(stats.router, prefix=API_PREFIX)
+    app.include_router(summary.router, prefix=API_PREFIX)
     app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
     return app
