@@ -1773,13 +1773,13 @@ async function loadWeekChart(canvasId) {
 
   const canvasCtx = ctx.getContext('2d')
   const gradientFill = canvasCtx.createLinearGradient(0, 0, 0, ctx.height || 220)
-  gradientFill.addColorStop(0, 'rgba(56, 189, 248, 0.42)')
-  gradientFill.addColorStop(0.6, 'rgba(125, 211, 252, 0.18)')
-  gradientFill.addColorStop(1, 'rgba(224, 242, 254, 0.02)')
+  gradientFill.addColorStop(0, 'rgba(74, 101, 65, 0.32)')
+  gradientFill.addColorStop(0.62, 'rgba(148, 167, 116, 0.16)')
+  gradientFill.addColorStop(1, 'rgba(241, 241, 224, 0.02)')
 
   const gradientStroke = canvasCtx.createLinearGradient(0, 0, ctx.width || 320, 0)
-  gradientStroke.addColorStop(0, '#38BDF8')
-  gradientStroke.addColorStop(1, '#0369A1')
+  gradientStroke.addColorStop(0, '#68885B')
+  gradientStroke.addColorStop(1, '#263F2B')
 
   activeChart = new Chart(ctx, {
     type: 'line',
@@ -1795,12 +1795,12 @@ async function loadWeekChart(canvasId) {
           tension: 0.4,
           borderWidth: 2.5,
           pointRadius: 4,
-          pointBackgroundColor: '#fff',
-          pointBorderColor: '#0EA5E9',
+          pointBackgroundColor: '#F7F4E8',
+          pointBorderColor: '#4A6541',
           pointBorderWidth: 2,
           pointHoverRadius: 6,
-          pointHoverBackgroundColor: '#0EA5E9',
-          pointHoverBorderColor: '#fff',
+          pointHoverBackgroundColor: '#4A6541',
+          pointHoverBorderColor: '#F7F4E8',
           spanGaps: false,
         },
       ],
@@ -1811,10 +1811,10 @@ async function loadWeekChart(canvasId) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: 'rgba(12, 74, 110, 0.92)',
-          titleColor: '#E0F2FE',
+          backgroundColor: 'rgba(30, 51, 36, 0.94)',
+          titleColor: '#F1F1E0',
           bodyColor: '#fff',
-          borderColor: 'rgba(125, 211, 252, 0.4)',
+          borderColor: 'rgba(184, 155, 114, 0.45)',
           borderWidth: 1,
           padding: 10,
           cornerRadius: 10,
@@ -1824,14 +1824,14 @@ async function loadWeekChart(canvasId) {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: '#6B8AA8', font: { size: 11 } },
+          ticks: { color: '#746D5B', font: { size: 11 } },
           border: { display: false },
         },
         y: {
           min: 0,
           max: 100,
-          ticks: { stepSize: 20, color: '#6B8AA8', font: { size: 11 } },
-          grid: { color: 'rgba(125, 211, 252, 0.18)' },
+          ticks: { stepSize: 20, color: '#746D5B', font: { size: 11 } },
+          grid: { color: 'rgba(74, 101, 65, 0.14)' },
           border: { display: false },
         },
       },
