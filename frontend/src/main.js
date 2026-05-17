@@ -937,7 +937,7 @@ function renderRecord() {
         </div>
 
         <textarea class="meal-input" id="meal-content" name="content"
-          rows="3" placeholder="补充描述（可选，有图片时可不填）"></textarea>
+          rows="2" placeholder="补充描述（可选，有图片时可不填）"></textarea>
 
         <button type="button" id="analyze-btn" class="secondary-action full-width">
           AI 识别 &amp; 评分
@@ -1059,19 +1059,6 @@ function renderTrend() {
 
     <section class="card">
       <div class="section-heading">
-        <h2>常见食物</h2>
-        <span id="week-stats-meta">加载中</span>
-      </div>
-      <div class="meal-list" id="top-foods-list">
-        <article class="meal-item muted">
-          <span>-</span>
-          <strong>正在加载</strong>
-        </article>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="section-heading">
         <h2>今日反馈</h2>
         <span id="today-summary-count">加载中</span>
       </div>
@@ -1085,6 +1072,19 @@ function renderTrend() {
       </div>
       <div id="ai-summary" class="summary-text">点击下方按钮，AI 将根据本周记录生成饮食总结。</div>
       <button class="secondary-action full-width" id="ai-analyze-btn" type="button">生成本周分析</button>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <h2>常见食物</h2>
+        <span id="week-stats-meta">加载中</span>
+      </div>
+      <div class="meal-list" id="top-foods-list">
+        <article class="meal-item muted">
+          <span>-</span>
+          <strong>正在加载</strong>
+        </article>
+      </div>
     </section>
   `
 }
@@ -1237,18 +1237,28 @@ async function loadWeekStatsPanel() {
       listEl.innerHTML = `<article class="meal-item muted"><span>-</span><strong>本周还没有可统计的食物</strong></article>`
       return
     }
-    listEl.innerHTML = data.top_foods
-      .map(
-        (item, index) => `<article class="meal-item">
-          <span>TOP ${index + 1}</span>
-          <div><strong>${escapeHtml(item.name)}</strong><div class="meal-score-row"><span class="meal-score-badge">${item.count} 次</span></div></div>
-        </article>`,
-      )
-      .join('')
+
+    const topFoods = data.top_foods.slice(0, 3)
+    const otherFoods = data.top_foods.slice(3)
+    const topMarkup = topFoods.map((item, index) => renderTopFoodItem(item, index)).join('')
+    const foldedMarkup = otherFoods.length
+      ? `<details class="folded-foods">
+          <summary>查看其他 ${otherFoods.length} 个常见食物</summary>
+          <div class="meal-list compact">${otherFoods.map((item, index) => renderTopFoodItem(item, index + 3)).join('')}</div>
+        </details>`
+      : ''
+    listEl.innerHTML = `${topMarkup}${foldedMarkup}`
   } catch (error) {
     metaEl.textContent = '-'
     listEl.innerHTML = `<article class="meal-item muted"><span>-</span><strong>${escapeHtml(error.message || '统计加载失败')}</strong></article>`
   }
+}
+
+function renderTopFoodItem(item, index) {
+  return `<article class="meal-item">
+    <span>TOP ${index + 1}</span>
+    <div><strong>${escapeHtml(item.name)}</strong><div class="meal-score-row"><span class="meal-score-badge">${item.count} 次</span></div></div>
+  </article>`
 }
 
 async function loadCalendarData(year, month, selectedDay) {
@@ -1408,18 +1418,18 @@ function updateMealTypeAvailability(meals) {
   const previousValue = select.value
 
   Array.from(select.options).forEach((option) => {
-    const used = usedTypes.has(option.value)
+    const used = option.value !== 'snack' && usedTypes.has(option.value)
     option.disabled = used
     const baseLabel = mealTypeLabel(option.value)
-    option.textContent = used ? `${baseLabel}（已记录）` : baseLabel
+    option.textContent = used ? `${baseLabel}\uFF08\u5DF2\u8BB0\u5F55\uFF09` : baseLabel
   })
 
-  if (!usedTypes.has(previousValue)) {
+  if (previousValue === 'snack' || !usedTypes.has(previousValue)) {
     select.value = previousValue
     return
   }
 
-  const nextAvailable = MEAL_TYPE_ORDER.find((type) => !usedTypes.has(type))
+  const nextAvailable = MEAL_TYPE_ORDER.find((type) => type === 'snack' || !usedTypes.has(type))
   if (nextAvailable) {
     select.value = nextAvailable
   } else {
@@ -1428,11 +1438,13 @@ function updateMealTypeAvailability(meals) {
 }
 
 async function hasDuplicateMealType(date, mealType) {
+  if (mealType === 'snack') return false
   const result = await apiRequest(`/api/meals?date=${date}`, { auth: true })
   return result.data.some((meal) => meal.meal_type === mealType)
 }
 
 async function hasDuplicateMealTypeExcept(date, mealType, mealId) {
+  if (mealType === 'snack') return false
   const result = await apiRequest(`/api/meals?date=${date}`, { auth: true })
   return result.data.some((meal) => meal.meal_type === mealType && meal.id !== mealId)
 }
@@ -1490,7 +1502,7 @@ function renderMealDetailContent(meal) {
       </div>
       <div class="history-content">
         <span>食物描述</span>
-        <textarea class="meal-input detail-content-input" name="content" rows="4" required>${escapeHtml(meal.content)}</textarea>
+        <textarea class="meal-input detail-content-input" name="content" rows="2" required>${escapeHtml(meal.content)}</textarea>
       </div>
       ${scoreBlock}
       <p class="form-message" aria-live="polite"></p>
