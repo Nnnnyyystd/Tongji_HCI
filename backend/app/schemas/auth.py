@@ -16,6 +16,7 @@ class UserRead(BaseModel):
     id: int
     username: str
     display_name: str
+    avatar_url: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -24,6 +24,7 @@ def create_user(db: Session, user_in: UserCreate) -> User:
     )
     db.add(user)
     db.flush()
+    user.avatar_url = f"/uploads/headpic/{((user.id - 1) % 5) + 1}.png"
 
     db.add(Preference(user_id=user.id))
     db.commit()
@@ -70,3 +71,11 @@ def revoke_session(db: Session, token: str) -> bool:
     db.delete(session)
     db.commit()
     return True
+
+
+def update_user_avatar(db: Session, user: User, avatar_url: str) -> User:
+    user.avatar_url = avatar_url
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user

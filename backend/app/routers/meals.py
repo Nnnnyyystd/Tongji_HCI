@@ -33,8 +33,8 @@ def list_meals(date: str, db: DbSession, current_user: CurrentUser):
 
 @router.get("/month", response_model=ApiResponse[dict])
 def month_days(year: int, month: int, db: DbSession, current_user: CurrentUser):
-    days = meal_service.get_recorded_days(db, current_user.id, year, month)
-    return ok(data={"days": days})
+    meal_counts = meal_service.get_month_meal_counts(db, current_user.id, year, month)
+    return ok(data={"days": sorted(meal_counts), "meal_counts": meal_counts})
 
 
 @router.get("/week-stats", response_model=ApiResponse[list[WeekDayStat]])
