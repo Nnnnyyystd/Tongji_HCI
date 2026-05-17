@@ -1,9 +1,11 @@
-import Chart from 'chart.js/auto'
+﻿import Chart from 'chart.js/auto'
 import './style.css'
 
 const API_BASE = 'http://127.0.0.1:8000'
 const TOKEN_KEY = 'foodmate_token'
 const USER_KEY = 'foodmate_user'
+const AI_ASSISTANT_AVATAR_URL = `${API_BASE}/uploads/headpic/green.png`
+const AI_ASSISTANT_NAME = '小食'
 
 const authState = {
   token: localStorage.getItem(TOKEN_KEY),
@@ -75,6 +77,17 @@ function defaultAvatarUrl(user = authState.user) {
 
 function userAvatarSrc(user = authState.user) {
   return resolveImageUrl(user?.avatar_url || defaultAvatarUrl(user))
+}
+
+function renderAiAssistantNote(content, className = '') {
+  return `
+    <div class="ai-assistant-note ${className}">
+      <div class="ai-assistant-identity">
+        <img class="ai-assistant-avatar" src="${AI_ASSISTANT_AVATAR_URL}" alt="${AI_ASSISTANT_NAME}" />
+        <span>${AI_ASSISTANT_NAME}</span>
+      </div>
+      <div class="ai-assistant-body">${content}</div>
+    </div>`
 }
 
 function renderMealItem(m, options = {}) {
@@ -931,6 +944,10 @@ function renderRecord() {
         </button>
 
         <div class="score-card hidden" id="score-card">
+          <div class="score-assistant-head">
+            <img class="ai-assistant-avatar small" src="${AI_ASSISTANT_AVATAR_URL}" alt="${AI_ASSISTANT_NAME}" />
+            <span>${AI_ASSISTANT_NAME}</span>
+          </div>
           <span class="score-number" id="score-number">—</span>
           <div class="score-detail">
             <span>食材多样 <strong id="score-variety">—</strong>/35</span>
@@ -1193,11 +1210,11 @@ async function loadTodaySummary(date = todayDateStr()) {
       : ''
 
     summaryEl.classList.remove('structured')
-    summaryEl.innerHTML = `
+    summaryEl.innerHTML = renderAiAssistantNote(`
       <p>${escapeHtml(data.summary)}</p>
       <p>${escapeHtml(data.suggestion)}</p>
       ${highlights}
-    `
+    `)
     if (countEl) {
       countEl.textContent = data.meal_count ? `${data.meal_count} 餐` : '暂无记录'
     }
@@ -1314,10 +1331,10 @@ async function loadLocalDaySummary(date, summaryEl, countEl) {
     summaryEl.classList.remove('structured')
 
     if (!meals.length) {
-      summaryEl.innerHTML = `
+      summaryEl.innerHTML = renderAiAssistantNote(`
         <p>这一天还没有饮食记录，可以先补记一餐。</p>
         <p>从最容易想起来的一餐开始即可，不需要一次写得很完整。</p>
-      `
+      `)
       if (countEl) countEl.textContent = '暂无记录'
       return
     }
@@ -1329,10 +1346,10 @@ async function loadLocalDaySummary(date, summaryEl, countEl) {
     const mealNames = meals.map((meal) => `${mealTypeLabel(meal.meal_type)}：${meal.content}`).join('；')
     const scoreText = averageScore == null ? '这一天还没有 AI 评分记录。' : `这一天已评分餐食的平均分是 ${averageScore} 分。`
 
-    summaryEl.innerHTML = `
+    summaryEl.innerHTML = renderAiAssistantNote(`
       <p>这一天共记录 ${meals.length} 餐，${scoreText}</p>
       <p>${escapeHtml(mealNames)}</p>
-    `
+    `)
     if (countEl) countEl.textContent = `${meals.length} 餐`
   } catch (error) {
     summaryEl.textContent = error.message || '该日总结加载失败'
@@ -1432,6 +1449,10 @@ function renderMealDetailContent(meal) {
   const scoreBlock =
     meal.score != null
       ? `<div class="score-card compact">
+          <div class="score-assistant-head">
+            <img class="ai-assistant-avatar small" src="${AI_ASSISTANT_AVATAR_URL}" alt="${AI_ASSISTANT_NAME}" />
+            <span>${AI_ASSISTANT_NAME}</span>
+          </div>
           <span class="score-number">${meal.score}</span>
           <div class="score-detail">
             ${meal.score_variety != null ? `<span>食材多样 <strong>${meal.score_variety}</strong>/35</span>` : ''}
@@ -1964,7 +1985,7 @@ function renderAiSummary(text) {
 
   if (!parsed || (!parsed.highlights && !parsed.improvements && !(parsed.suggestions?.length))) {
     el.classList.remove('structured')
-    el.textContent = text || ''
+    el.innerHTML = renderAiAssistantNote(`<p>${escapeHtml(text || '')}</p>`)
     return
   }
 
@@ -1995,7 +2016,7 @@ function renderAiSummary(text) {
   }
 
   el.classList.add('structured')
-  el.innerHTML = sections.join('')
+  el.innerHTML = renderAiAssistantNote(sections.join(''), 'structured')
 }
 
 async function loadSavedAiSummary() {
