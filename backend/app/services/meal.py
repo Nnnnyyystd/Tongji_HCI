@@ -7,24 +7,50 @@ from backend.app.models.meal import Meal
 from backend.app.schemas.meal import MealCreate, MealUpdate
 
 
+_MEAL_TYPE_ORDER = {"breakfast": 0, "lunch": 1, "dinner": 2, "snack": 3}
+
+
 def get_meals_by_date(db: Session, user_id: int, date: str) -> list[Meal]:
-    return (
+    meals = (
         db.query(Meal)
         .filter(Meal.user_id == user_id, Meal.date == date)
         .order_by(Meal.created_at)
         .all()
     )
+    return sorted(meals, key=lambda m: (_MEAL_TYPE_ORDER.get(m.meal_type, 99), m.created_at))
 
 
 def get_recorded_days(db: Session, user_id: int, year: int, month: int) -> list[int]:
     prefix = f"{year:04d}-{month:02d}-"
     rows = (
         db.query(Meal.date)
-        .filter(Meal.user_id == user_id, Meal.date.like(f"{prefix}%"))
+        .filter(
+            Meal.user_id == user_id,
+            Meal.date.like(f"{prefix}%"),
+            Meal.meal_type.in_(("breakfast", "lunch", "dinner")),
+        )
         .distinct()
         .all()
     )
     return sorted(int(row.date[8:10]) for row in rows)
+
+
+def get_month_meal_counts(db: Session, user_id: int, year: int, month: int) -> dict[int, int]:
+    prefix = f"{year:04d}-{month:02d}-"
+    rows = (
+        db.query(Meal.date, Meal.meal_type)
+        .filter(
+            Meal.user_id == user_id,
+            Meal.date.like(f"{prefix}%"),
+            Meal.meal_type.in_(("breakfast", "lunch", "dinner")),
+        )
+        .all()
+    )
+    meal_types_by_day: dict[int, set[str]] = {}
+    for row in rows:
+        day = int(row.date[8:10])
+        meal_types_by_day.setdefault(day, set()).add(row.meal_type)
+    return {day: len(meal_types) for day, meal_types in meal_types_by_day.items()}
 
 
 def create_meal(db: Session, user_id: int, data: MealCreate) -> Meal:

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="FoodMate">
+  <defs>
+    <linearGradient id="bg" x1="14" y1="8" x2="82" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7F4E8"/>
+      <stop offset="0.48" stop-color="#E1E8CA"/>
+      <stop offset="1" stop-color="#D1C49A"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="28" y1="18" x2="70" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#94A774"/>
+      <stop offset="1" stop-color="#263F2B"/>
+    </linearGradient>
+    <linearGradient id="bowl" x1="23" y1="50" x2="74" y2="81" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A6541"/>
+      <stop offset="1" stop-color="#1E3324"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#1E3324" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="96" height="96" rx="24" fill="url(#bg)"/>
+  <path d="M18 24C28 12 46 11 59 20C70 28 75 42 72 55C61 56 47 51 38 42C30 35 24 28 18 24Z" fill="url(#leaf)" filter="url(#shadow)"/>
+  <path d="M35 21C43 32 51 42 67 53" fill="none" stroke="#F7F4E8" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+  <path d="M24 52H72C70 70 61 80 48 80S26 70 24 52Z" fill="url(#bowl)" filter="url(#shadow)"/>
+  <path d="M22 51C22 46 29 43 48 43S74 46 74 51C74 56 67 59 48 59S22 56 22 51Z" fill="#F7F4E8" stroke="#4A6541" stroke-width="4"/>
+  <path d="M36 49C40 47 45 47 49 49M52 49C56 47 61 47 64 49" fill="none" stroke="#B89B72" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="69" cy="27" r="5" fill="#B89B72"/>
+  <path d="M72 15V25M67 20H77" stroke="#F7F4E8" stroke-width="3" stroke-linecap="round"/>
+</svg>
