@@ -14,9 +14,9 @@ DATABASE_URL = f"sqlite:///{DATA_DIR / 'foodmate.db'}"
 APP_NAME = "FoodMate API"
 API_PREFIX = "/api"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
-DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "sk-0e9f9faa63bf4531a1f65bc9f6c811ca")
+DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "sk-lovvvvvvvvvvvvvvvvvvvvc9f6c811c00000000000000000000000000000000000000000000a")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-QWEN_API_KEY: str = os.getenv("QWEN_API_KEY", "sk-71ce27aab83c40d8a982f72ed84fbbe8")
+QWEN_API_KEY: str = os.getenv("QWEN_API_KEY", "sk-kkkkkkkkkkkkkkkkkkk")
 QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 FRONTEND_ORIGINS = [
     "http://127.0.0.1:5173",
